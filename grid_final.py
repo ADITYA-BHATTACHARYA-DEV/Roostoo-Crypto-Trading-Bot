@@ -17,14 +17,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(mes
 
 # --- CONFIGURATION ---
 API_BASE_URL = "https://mock-api.roostoo.com"
-API_KEY = "Vc5YpC0HLjVoxjRe5uKvQV38ISfmRaqnkxM1pooVfs6czH72lhgsuqF3ztf8GG8C"
-SECRET_KEY = "OKkKp2DRKRbcMWmPw8nQoHB7ulXSAYnIS0DxTAmUB4MaQBmwk65yemeUNr0aPiR8"
-RISK_FREE_RATE = 1  # 1 (not used in plotting in this demo)
+API_KEY = "jr2XBSSD0E1ZcfHfpsYRuwxCK1DHLZiIPvhtj2nWaYJZ508FnuxoiAdFLGGVExiA"
+SECRET_KEY = "symX7GSnEcrud98jhs8plYYqcvsKn36RaT8GglNUqwBLSyJPAyVl8XYgIAPkEWE6"
+RISK_FREE_RATE = 2  # 1 (not used in plotting in this demo)
 
 # For simulation/demo purposes
 TRADE_PAIR = "BTC/USD"
-FETCH_INTERVAL = 5         # Increase interval to reduce rate limit errors
-SIMULATION_DURATION = 60  # Run simulation for 120 seconds
+FETCH_INTERVAL = 7  # seconds between fetches
 
 # CSV file name for storing trading data
 CSV_FILE = "trading_data.csv"
@@ -76,35 +75,6 @@ class RoostooAPIClient:
             response = requests.get(url, params=params, headers=headers)
         return self._handle_response(response)
 
-# --- DATA RECORDER ---
-class DataRecorder:
-    def __init__(self, api_client, trade_pair, fetch_interval=1):
-        self.api_client = api_client
-        self.trade_pair = trade_pair
-        self.fetch_interval = fetch_interval
-        self.data = []
-
-    def record(self, duration_sec):
-        logging.info(f"Starting data recording for {duration_sec} seconds...")
-        start_time = time.time()
-        while time.time() - start_time < duration_sec:
-            ticker_data = self.api_client.get_ticker(pair=self.trade_pair)
-            if ticker_data and ticker_data.get("Success"):
-                try:
-                    price = float(ticker_data["Data"][self.trade_pair]["LastPrice"])
-                    record_time = datetime.now()
-                    self.data.append({"timestamp": record_time, "price": price})
-                    logging.info(f"Recorded price: {price} at {record_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                except Exception as e:
-                    logging.error(f"Error processing ticker data: {e}")
-            else:
-                logging.error("Failed to fetch ticker data during recording.")
-            time.sleep(self.fetch_interval)
-        logging.info("Data recording completed.")
-
-    def get_dataframe(self):
-        return pd.DataFrame(self.data)
-
 # --- TRADING STRATEGY: VERY SENSITIVE GRID TRADING ---
 class TradingStrategy:
     def __init__(self):
@@ -151,7 +121,6 @@ class RiskManager:
         self.portfolio_values.append((timestamp, value))
 
     def calculate_sharpe_ratio(self):
-        # Not used in this demo plotting, but left for completeness.
         if len(self.portfolio_values) < 2:
             return 0
         values = np.array([v for _, v in self.portfolio_values])
@@ -162,8 +131,7 @@ class RiskManager:
 
 # --- SIMULATION BOT ---
 class SimulationBot:
-    def __init__(self, recorded_df, strategy, risk_manager, initial_cash=100000):
-        self.data = recorded_df.sort_values(by="timestamp").reset_index(drop=True)
+    def __init__(self, strategy, risk_manager, initial_cash=100000):
         self.strategy = strategy
         self.risk_manager = risk_manager
         self.initial_cash = initial_cash
@@ -173,6 +141,7 @@ class SimulationBot:
         self.order_id_counter = 0  # Unique order IDs
         self.api_client = RoostooAPIClient(API_KEY, SECRET_KEY)
         self.portfolio_history = []  # list of (timestamp, portfolio_value)
+        self.data = pd.DataFrame(columns=["timestamp", "price"])  # Will accumulate new data
 
     def update_portfolio_value(self, price, timestamp):
         value = self.cash + self.holdings * price
@@ -215,37 +184,61 @@ class SimulationBot:
             self.cash += trade_fraction * price
             self.log_trade(timestamp, "SELL", price, trade_fraction, order_id)
 
-    def run_simulation(self):
-        # Create CSV file with headers if it doesn't exist
-        if not os.path.exists(CSV_FILE):
-            pd.DataFrame(columns=["timestamp", "signal", "price", "amount", "cash", "holdings", "order_id"]).to_csv(CSV_FILE, index=False)
-        for i, row in self.data.iterrows():
-            price = row["price"]
-            timestamp = row["timestamp"]
-            self.strategy.update_price(price)
-            signal = self.strategy.generate_signal(self.data.iloc[:i+1])
-            self.simulate_trade(signal, price, timestamp)
-            self.update_portfolio_value(price, timestamp)
+    def run_simulation_loop(self):
+        logging.info("Starting continuous simulation loop. Press Ctrl+C to stop.")
+        while True:
+            try:
+                ticker_data = self.api_client.get_ticker(pair=TRADE_PAIR)
+                if ticker_data and ticker_data.get("Success"):
+                    price = float(ticker_data["Data"][TRADE_PAIR]["LastPrice"])
+                    current_time = datetime.now()
+                    # Append new data point
+                    new_data = pd.DataFrame([{"timestamp": current_time, "price": price}])
+                    self.data = pd.concat([self.data, new_data], ignore_index=True)
+                    # Generate signal using all accumulated data
+                    signal = self.strategy.generate_signal(self.data)
+                    self.simulate_trade(signal, price, current_time)
+                    self.update_portfolio_value(price, current_time)
+                else:
+                    logging.error("Failed to fetch ticker data in simulation loop.")
+                time.sleep(FETCH_INTERVAL)
+            except KeyboardInterrupt:
+                logging.info("Simulation interrupted by user.")
+                break
 
-# --- MAIN EXECUTION ---
+def plot_candlestick(data):
+    # Convert timestamp column to datetime if needed
+    data['timestamp'] = pd.to_datetime(data['timestamp'])
+    data.set_index('timestamp', inplace=True)
+    # Resample data to 1-minute intervals for candlestick OHLC data
+    ohlc = data['price'].resample('1T').ohlc()
+    import plotly.graph_objects as go
+    fig = go.Figure(data=[go.Candlestick(x=ohlc.index,
+                                         open=ohlc['open'],
+                                         high=ohlc['high'],
+                                         low=ohlc['low'],
+                                         close=ohlc['close'])])
+    fig.update_layout(title='Candlestick Chart of Recorded Prices',
+                      xaxis_title='Time',
+                      yaxis_title='Price')
+    fig.show()
+
 def main():
-    api_client = RoostooAPIClient(API_KEY, SECRET_KEY)
-    recorder = DataRecorder(api_client, TRADE_PAIR, FETCH_INTERVAL)
-    recorder.record(SIMULATION_DURATION)  # Record for 120 seconds
-    recorded_df = recorder.get_dataframe()
-
-    if recorded_df.empty:
-        logging.error("No data recorded. Exiting simulation.")
-        return
-
     # Use the highly sensitive Grid Trading Strategy with a gap threshold
     strategy = SensitiveGridTradingStrategy(sensitive_gap=0.005)
     risk_manager = RiskManager()
-    simulation_bot = SimulationBot(recorded_df, strategy, risk_manager)
-    simulation_bot.run_simulation()
+    simulation_bot = SimulationBot(strategy, risk_manager)
+    
+    # Run the simulation loop continuously
+    simulation_bot.run_simulation_loop()
 
-    final_price = recorded_df['price'].iloc[-1]
-    final_timestamp = recorded_df['timestamp'].iloc[-1]
+    # When interrupted, calculate final profit and plot candlestick chart of price data
+    if simulation_bot.data.empty:
+        logging.error("No data recorded during simulation.")
+        return
+
+    final_price = simulation_bot.data['price'].iloc[-1]
+    final_timestamp = simulation_bot.data['timestamp'].iloc[-1]
     final_portfolio_value = simulation_bot.update_portfolio_value(final_price, final_timestamp)
     profit = final_portfolio_value - simulation_bot.initial_cash
 
@@ -254,19 +247,8 @@ def main():
     print(f"Final Portfolio Value: {final_portfolio_value:.2f}")
     print(f"Profit: {profit:.2f}")
 
-    # Plot portfolio value over time using matplotlib
-    times = [t for t, _ in simulation_bot.portfolio_history]
-    values = [v for _, v in simulation_bot.portfolio_history]
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(times, values, marker='o', linestyle='-', color='b')
-    plt.xlabel("Time")
-    plt.ylabel("Portfolio Value")
-    plt.title("Portfolio Value Over Time")
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.grid(True)
-    plt.show()
+    # Plot the candlestick chart
+    plot_candlestick(simulation_bot.data)
 
 if __name__ == "__main__":
     main()
