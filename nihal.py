@@ -18,10 +18,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(mes
 API_BASE_URL = "https://mock-api.roostoo.com"  # Change this to the live endpoint if needed
 API_KEY = "jr2XBSSD0E1ZcfHfpsYRuwxCK1DHLZiIPvhtj2nWaYJZ508FnuxoiAdFLGGVExiA"
 SECRET_KEY = "symX7GSnEcrud98jhs8plYYqcvsKn36RaT8GglNUqwBLSyJPAyVl8XYgIAPkEWE6"
-RISK_FREE_RATE = 2  # Not used actively in this demo
+RISK_FREE_RATE = 1  # Not used actively in this demo
 
-TRADE_PAIR = "BTC/USD"  # Change to Bitcoin (BTC)
-FETCH_INTERVAL = 15  # seconds between each ticker fetch
+TRADE_PAIR = "BTC/USD"
+FETCH_INTERVAL = 7  # seconds between each ticker fetch
 CSV_FILE = "trading_data.csv"
 
 # --- STRATEGY PARAMETERS ---
@@ -31,7 +31,7 @@ RSI_OVERBOUGHT = 60  # Adjusted for more SELL signals
 GRID_SENSITIVITY = 0.001  # 0.1% price movement
 STOP_LOSS_PCT = 1  # 1% stop loss
 TAKE_PROFIT_PCT = 2  # 2% take profit
-QUANTITY_PER_TRADE = 0.01  # Buy 2 BTC per trade
+TRADE_FRACTION = 0.01  # 1% of portfolio per trade
 PROFIT_TARGET_PCT = 5  # Stop the bot when net profit reaches 5% of initial capital
 
 # --- API CLIENT ---
@@ -224,32 +224,32 @@ class TradingBot:
 
     def live_trade(self, signal, price, timestamp):
         order_id = self.generate_order_id()
-        if signal == "BUY" and self.cash >= price * QUANTITY_PER_TRADE:  # Check if there's enough cash to buy QUANTITY_PER_TRADE units
-            response = self.api_client.place_order(TRADE_PAIR, "BUY", "MARKET", str(QUANTITY_PER_TRADE))  # Fixed quantity of QUANTITY_PER_TRADE
+        if signal == "BUY" and self.cash >= TRADE_FRACTION * price:
+            response = self.api_client.place_order(TRADE_PAIR, "BUY", "MARKET", str(TRADE_FRACTION))
             if response and response.get("Success"):
-                self.holdings += QUANTITY_PER_TRADE  # Increase holdings by QUANTITY_PER_TRADE units
-                self.cash -= price * QUANTITY_PER_TRADE  # Deduct the cost of QUANTITY_PER_TRADE units
+                self.holdings += TRADE_FRACTION
+                self.cash -= TRADE_FRACTION * price
                 sl = price * (1 - STOP_LOSS_PCT / 100)
                 tp = price * (1 + TAKE_PROFIT_PCT / 100)
                 self.open_positions.append({
                     'entry_time': timestamp,
                     'entry_price': price,
-                    'quantity': QUANTITY_PER_TRADE,  # Fixed quantity of QUANTITY_PER_TRADE
+                    'quantity': TRADE_FRACTION,
                     'sl': sl,
                     'tp': tp,
                     'status': 'open'
                 })
-                self.log_trade(timestamp, "BUY", price, QUANTITY_PER_TRADE, order_id, sl, tp)  # Log quantity as QUANTITY_PER_TRADE
-                logging.info(f"Live BUY order placed for {QUANTITY_PER_TRADE} units.")
+                self.log_trade(timestamp, "BUY", price, TRADE_FRACTION, order_id, sl, tp)
+                logging.info("Live BUY order placed.")
             else:
                 logging.error("Live BUY order failed.")
-        elif signal == "SELL" and self.holdings >= QUANTITY_PER_TRADE:  # Check if there's at least QUANTITY_PER_TRADE units to sell
-            response = self.api_client.place_order(TRADE_PAIR, "SELL", "MARKET", str(QUANTITY_PER_TRADE))  # Fixed quantity of QUANTITY_PER_TRADE
+        elif signal == "SELL" and self.holdings >= TRADE_FRACTION:
+            response = self.api_client.place_order(TRADE_PAIR, "SELL", "MARKET", str(TRADE_FRACTION))
             if response and response.get("Success"):
-                self.holdings -= QUANTITY_PER_TRADE  # Decrease holdings by QUANTITY_PER_TRADE units
-                self.cash += price * QUANTITY_PER_TRADE  # Add the proceeds from selling QUANTITY_PER_TRADE units
-                self.log_trade(timestamp, "SELL", price, QUANTITY_PER_TRADE, order_id)  # Log quantity as QUANTITY_PER_TRADE
-                logging.info(f"Live SELL order placed for {QUANTITY_PER_TRADE} units.")
+                self.holdings -= TRADE_FRACTION
+                self.cash += TRADE_FRACTION * price
+                self.log_trade(timestamp, "SELL", price, TRADE_FRACTION, order_id)
+                logging.info("Live SELL order placed.")
             else:
                 logging.error("Live SELL order failed.")
         else:
