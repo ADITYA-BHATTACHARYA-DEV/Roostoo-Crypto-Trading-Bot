@@ -18,10 +18,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(mes
 API_BASE_URL = "https://mock-api.roostoo.com"  # Change this to the live endpoint if needed
 API_KEY = "jr2XBSSD0E1ZcfHfpsYRuwxCK1DHLZiIPvhtj2nWaYJZ508FnuxoiAdFLGGVExiA"
 SECRET_KEY = "symX7GSnEcrud98jhs8plYYqcvsKn36RaT8GglNUqwBLSyJPAyVl8XYgIAPkEWE6"
-RISK_FREE_RATE = 1  # Not used actively in this demo
+RISK_FREE_RATE = 2  # Not used actively in this demo
 
-TRADE_PAIR = "BAND/USD"  # Change to Band Protocol (BAND)
-FETCH_INTERVAL = 20  # seconds between each ticker fetch
+TRADE_PAIR = "BTC/USD"  # Change to Bitcoin (BTC)
+FETCH_INTERVAL = 15  # seconds between each ticker fetch
 CSV_FILE = "trading_data.csv"
 
 # --- STRATEGY PARAMETERS ---
@@ -31,7 +31,7 @@ RSI_OVERBOUGHT = 60  # Adjusted for more SELL signals
 GRID_SENSITIVITY = 0.001  # 0.1% price movement
 STOP_LOSS_PCT = 1  # 1% stop loss
 TAKE_PROFIT_PCT = 2  # 2% take profit
-QUANTITY_PER_TRADE = 500  # Buy 500 BAND per trade
+QUANTITY_PER_TRADE = 0.01  # Buy 2 BTC per trade
 PROFIT_TARGET_PCT = 5  # Stop the bot when net profit reaches 5% of initial capital
 
 # --- API CLIENT ---
